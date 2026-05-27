@@ -18,9 +18,9 @@
           </p>
           
           <div class="hero-actions">
-            <button type="button" @click="goToAIChat" class="action-btn primary">
-              <span class="btn-icon">🤖</span>
-              <span class="btn-text">AI对话</span>
+            <button type="button" @click="goToDesignPrint" class="action-btn primary">
+              <span class="btn-icon">✏️</span>
+              <span class="btn-text">设计此灯</span>
               <span class="btn-arrow">→</span>
             </button>
             <button type="button" @click="goToVirtualLampAnimation" class="action-btn secondary">
@@ -88,10 +88,6 @@
                     <span class="info-value">汉代风格</span>
                   </div>
                 </div>
-                <button type="button" @click="goToDesignPrint" class="design-btn">
-                  <span class="btn-icon">✏️</span>
-                  <span class="btn-text">设计此灯</span>
-                </button>
               </div>
             </div>
           </div>
@@ -112,6 +108,7 @@ import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
 
 const router = useRouter()
 const route = useRoute()
@@ -136,13 +133,13 @@ const initScene = () => {
   try {
     scene = new THREE.Scene()
     scene.background = new THREE.Color(0x0a0f1c)
-    scene.fog = new THREE.FogExp2(0x0a0f1c, 0.015)
+    // scene.fog = new THREE.FogExp2(0x0a0f1c, 0.015)
     
     const width = container.value.clientWidth
     const height = container.value.clientHeight
     
     camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 1000)
-    camera.position.set(4, 2.5, 4)
+    camera.position.set(2.5, 2, 2.5)
     camera.lookAt(0, 0, 0)
     
     renderer = new THREE.WebGLRenderer({
@@ -155,21 +152,22 @@ const initScene = () => {
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
     renderer.toneMapping = THREE.ACESFilmicToneMapping
-    renderer.toneMappingExposure = 1.2
+    renderer.toneMappingExposure = 2.0
     
     controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
     controls.dampingFactor = 0.05
-    controls.minDistance = 2
-    controls.maxDistance = 12
+    controls.minDistance = 1
+    controls.maxDistance = 8
     controls.maxPolarAngle = Math.PI / 2
     controls.autoRotate = isAnimating.value
     controls.autoRotateSpeed = 1.5
+    controls.target.set(0, 0, 0)  // 设置旋转中心为原点
     
-    ambientLight = new THREE.AmbientLight(0xffffff, 0.4)
+    ambientLight = new THREE.AmbientLight(0xffffff, 2.0)
     scene.add(ambientLight)
     
-    directionalLight = new THREE.DirectionalLight(0xfff0e0, 1.2)
+    directionalLight = new THREE.DirectionalLight(0xffffff, 4.0)
     directionalLight.position.set(5, 10, 5)
     directionalLight.castShadow = true
     directionalLight.shadow.mapSize.width = 2048
@@ -178,11 +176,15 @@ const initScene = () => {
     directionalLight.shadow.camera.far = 50
     scene.add(directionalLight)
     
-    lampModel = createDetailedLamp()
-    scene.add(lampModel)
+    const fillLight = new THREE.DirectionalLight(0xffffff, 1.5)
+    fillLight.position.set(-3, 5, -3)
+    scene.add(fillLight)
     
     createLampLight()
     createEnvironment()
+    
+    // 加载真实的西汉长信宫灯GLTF模型（异步加载）
+    loadRealLampModel()
     
     animate()
     
@@ -199,104 +201,424 @@ const initScene = () => {
   }
 }
 
-const createDetailedLamp = () => {
+// 加载西汉长信宫灯GLTF模型
+const loadRealLampModel = () => {
+  const loader = new GLTFLoader()
+  const modelPath = '/models/西汉长信宫灯.gltf'
+  
+  loader.load(
+    modelPath,
+    (gltf) => {
+      const group = gltf.scene
+      
+      // ===== 确保模型居中于(0,0,0) =====
+      const box = new THREE.Box3().setFromObject(group)
+      const center = new THREE.Vector3()
+      box.getCenter(center)
+      
+      group.traverse((child) => {
+        if (child !== group && child.position) {
+          child.position.sub(center)
+        }
+      })
+      
+      // 验证居中结果
+      const newBox = new THREE.Box3().setFromObject(group)
+      const newCenter = new THREE.Vector3()
+      newBox.getCenter(newCenter)
+      console.log('长信宫灯模型中心:', newCenter)
+      
+      // 调整模型整体大小
+      group.scale.set(5, 5, 5)
+      
+      lampModel = group
+      scene.add(group)
+      isLoading.value = false
+      
+      // 在灯腔位置添加内部光源（模拟灯火效果）
+      addLampInternalLight(group)
+      
+      console.log('✅ 西汉长信宫灯GLTF模型加载成功，已居中于(0,0,0)')
+    },
+    (xhr) => {
+      console.log(`模型加载进度: ${(xhr.loaded / xhr.total) * 100}%`)
+    },
+    (error) => {
+      console.error('❌ GLTF模型加载失败:', error)
+      console.log('使用程序生成的五灯连枝灯模型')
+      lampModel = createFiveBranchLamp()
+      scene.add(lampModel)
+      isLoading.value = false
+    }
+  )
+}
+
+// 在灯腔内部添加光源（模拟灯火从内部发光）
+const addLampInternalLight = (group) => {
+  // 创建一个点光源放在灯腔内部
+  const internalLight = new THREE.PointLight(0xFFFF99, 15, 15, 1)
+  internalLight.position.set(-0.3, 1.6, 0.1)
+  internalLight.castShadow = true
+  internalLight.shadow.mapSize.width = 1024
+  internalLight.shadow.mapSize.height = 1024
+  internalLight.name = 'internalLampLight'
+  group.add(internalLight)
+  
+  // 添加小火焰效果
+  const flameGeom = new THREE.SphereGeometry(0.15, 16, 16)
+  const flameMat = new THREE.MeshBasicMaterial({ color: 0xFFFF99, transparent: true, opacity: 0.9 })
+  const flame = new THREE.Mesh(flameGeom, flameMat)
+  flame.position.set(-0.3, 1.8, 0.1)
+  flame.name = 'flame'
+  group.add(flame)
+  
+  console.log('✅ 已在灯腔内部添加光源')
+}
+
+// 在灯的位置添加灯火效果
+const createFlameEffect = (group) => {
+  // 火焰核心（白色）
+  const flameCoreGeom = new THREE.SphereGeometry(0.06, 16, 16)
+  const flameCoreMat = new THREE.MeshBasicMaterial({ color: 0xFFFFFF, transparent: true, opacity: 0.95 })
+  const flameCore = new THREE.Mesh(flameCoreGeom, flameCoreMat)
+  flameCore.position.set(0.35, 0.55, 0.35)
+  flameCore.name = 'flameCore'
+  group.add(flameCore)
+  
+  // 火焰内层（黄色）
+  const flameInnerGeom = new THREE.ConeGeometry(0.05, 0.15, 12)
+  const flameInnerMat = new THREE.MeshBasicMaterial({ color: 0xFFFF99, transparent: true, opacity: 0.9 })
+  const flameInner = new THREE.Mesh(flameInnerGeom, flameInnerMat)
+  flameInner.position.set(0.35, 0.52, 0.35)
+  flameInner.name = 'flameInner'
+  group.add(flameInner)
+  
+  // 火焰中层（橙色）
+  const flameMidGeom = new THREE.ConeGeometry(0.07, 0.18, 12)
+  const flameMidMat = new THREE.MeshBasicMaterial({ color: 0xFFAA33, transparent: true, opacity: 0.75 })
+  const flameMid = new THREE.Mesh(flameMidGeom, flameMidMat)
+  flameMid.position.set(0.35, 0.48, 0.35)
+  flameMid.name = 'flameMid'
+  group.add(flameMid)
+  
+  // 火焰外层（红色）
+  const flameOuterGeom = new THREE.ConeGeometry(0.09, 0.22, 12)
+  const flameOuterMat = new THREE.MeshBasicMaterial({ color: 0xFF6633, transparent: true, opacity: 0.5 })
+  const flameOuter = new THREE.Mesh(flameOuterGeom, flameOuterMat)
+  flameOuter.position.set(0.35, 0.45, 0.35)
+  flameOuter.name = 'flameOuter'
+  group.add(flameOuter)
+  
+  // 点光源（灯火）
+  const flameLight = new THREE.PointLight(0xFFBB44, 2.5, 6, 2)
+  flameLight.position.set(0.35, 0.5, 0.35)
+  flameLight.castShadow = true
+  flameLight.name = 'flameLight'
+  group.add(flameLight)
+  
+  // 发光球体
+  const flameSphereGeom = new THREE.SphereGeometry(0.05, 12, 12)
+  const flameSphereMat = new THREE.MeshBasicMaterial({ color: 0xFFFFCC, transparent: true, opacity: 0.9 })
+  const flameSphere = new THREE.Mesh(flameSphereGeom, flameSphereMat)
+  flameSphere.position.set(0.35, 0.52, 0.35)
+  flameSphere.name = 'flameSphere'
+  group.add(flameSphere)
+  
+  // 光晕效果
+  const glowGeom = new THREE.SphereGeometry(0.4, 16, 16)
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: 0xFF8822,
+    transparent: true,
+    opacity: 0.12,
+    side: THREE.BackSide
+  })
+  const glow = new THREE.Mesh(glowGeom, glowMat)
+  glow.position.set(0.35, 0.45, 0.35)
+  glow.name = 'hoodGlow'
+  group.add(glow)
+}
+
+// 创建汉代五灯连枝灯模型（历史依据：河北满城汉墓出土的青铜连枝灯）
+// 五灯连枝灯是汉代常见的灯具形式，具有明确的考古发现依据
+const createFiveBranchLamp = () => {
   const group = new THREE.Group()
   
-  const baseGeometry = new THREE.CylinderGeometry(1.2, 1.8, 0.6, 64)
-  const baseMaterial = new THREE.MeshStandardMaterial({
-    color: 0x8B4513,
-    metalness: 0.8,
-    roughness: 0.2
+  // 青铜材质
+  const bronzeMaterial = new THREE.MeshStandardMaterial({
+    color: 0xCD7F32, // 青铜色
+    metalness: 0.85,
+    roughness: 0.25
   })
-  const base = new THREE.Mesh(baseGeometry, baseMaterial)
-  base.position.y = -1.2
+  
+  const goldMaterial = new THREE.MeshStandardMaterial({
+    color: 0xFFD700, // 金色
+    metalness: 0.9,
+    roughness: 0.1
+  })
+  
+  // ===== 底座 =====
+  // 三足底座（汉代典型样式）
+  const baseGeometry = new THREE.CylinderGeometry(1.8, 2.2, 0.25, 64)
+  const base = new THREE.Mesh(baseGeometry, bronzeMaterial)
+  base.position.y = -2.1
   base.castShadow = true
   base.receiveShadow = true
   group.add(base)
   
-  const baseRingGeometry = new THREE.TorusGeometry(1.5, 0.15, 32, 64)
-  const baseRingMaterial = new THREE.MeshStandardMaterial({
-    color: 0xDAA520,
-    metalness: 0.9,
-    roughness: 0.1
-  })
-  const baseRing = new THREE.Mesh(baseRingGeometry, baseRingMaterial)
-  baseRing.position.y = -0.9
-  baseRing.rotation.x = Math.PI / 2
-  baseRing.castShadow = true
-  group.add(baseRing)
+  // 三足
+  for (let i = 0; i < 3; i++) {
+    const legGeometry = new THREE.CylinderGeometry(0.15, 0.2, 0.5, 32)
+    const leg = new THREE.Mesh(legGeometry, bronzeMaterial)
+    const angle = (i * 2 * Math.PI) / 3
+    leg.position.set(
+      Math.cos(angle) * 0.9,
+      -2.45,
+      Math.sin(angle) * 0.9
+    )
+    leg.castShadow = true
+    group.add(leg)
+  }
   
-  const bodyGeometry = new THREE.CylinderGeometry(0.9, 1.2, 2.4, 64)
-  const bodyMaterial = new THREE.MeshStandardMaterial({
-    color: 0xDAA520,
-    metalness: 0.85,
-    roughness: 0.15
-  })
-  const body = new THREE.Mesh(bodyGeometry, bodyMaterial)
-  body.position.y = 0
-  body.castShadow = true
-  body.receiveShadow = true
-  group.add(body)
+  // ===== 主干 =====
+  const trunkGeometry = new THREE.CylinderGeometry(0.25, 0.35, 2.5, 32)
+  const trunk = new THREE.Mesh(trunkGeometry, bronzeMaterial)
+  trunk.position.y = -0.75
+  trunk.castShadow = true
+  trunk.receiveShadow = true
+  group.add(trunk)
   
-  for (let i = 0; i < 4; i++) {
-    const ringGeometry = new THREE.TorusGeometry(1.05, 0.08, 32, 64)
-    const ringMaterial = new THREE.MeshStandardMaterial({
-      color: 0xFFD700,
-      metalness: 0.95,
-      roughness: 0.05
-    })
-    const ring = new THREE.Mesh(ringGeometry, ringMaterial)
-    ring.position.y = -1.2 + 0.6 * (i + 1)
+  // 主干装饰环
+  for (let i = 0; i < 3; i++) {
+    const ringGeometry = new THREE.TorusGeometry(0.4, 0.06, 16, 32)
+    const ring = new THREE.Mesh(ringGeometry, goldMaterial)
+    ring.position.y = -1.8 + i * 1
     ring.rotation.x = Math.PI / 2
     ring.castShadow = true
     group.add(ring)
   }
   
-  const topGeometry = new THREE.CylinderGeometry(0.7, 0.9, 0.4, 64)
-  const topMaterial = new THREE.MeshStandardMaterial({
-    color: 0xFFD700,
-    metalness: 0.9,
-    roughness: 0.1
-  })
-  const top = new THREE.Mesh(topGeometry, topMaterial)
-  top.position.y = 1.5
-  top.castShadow = true
-  top.receiveShadow = true
-  group.add(top)
+  // ===== 主灯盏（顶部）=====
+  // 灯盏托盘
+  const mainTrayGeometry = new THREE.CylinderGeometry(0.5, 0.7, 0.15, 32)
+  const mainTray = new THREE.Mesh(mainTrayGeometry, bronzeMaterial)
+  mainTray.position.y = 0.9
+  mainTray.castShadow = true
+  group.add(mainTray)
   
-  const topDecorationGeometry = new THREE.SphereGeometry(0.5, 32, 32)
-  const topDecorationMaterial = new THREE.MeshStandardMaterial({
-    color: 0xFF6347,
-    metalness: 0.7,
-    roughness: 0.3,
-    emissive: 0xFF6347,
-    emissiveIntensity: 0.2
+  // 灯盏边缘
+  const mainRimGeometry = new THREE.TorusGeometry(0.65, 0.08, 16, 32)
+  const mainRim = new THREE.Mesh(mainRimGeometry, goldMaterial)
+  mainRim.position.y = 1
+  mainRim.rotation.x = Math.PI / 2
+  mainRim.castShadow = true
+  group.add(mainRim)
+  
+  // ===== 四个分支灯盏 =====
+  const branchAngles = [0, Math.PI/2, Math.PI, 3*Math.PI/2] // 四个方向
+  
+  branchAngles.forEach((angle, index) => {
+    // 分支臂
+    const branchGeometry = new THREE.CylinderGeometry(0.08, 0.12, 1.2, 16)
+    const branch = new THREE.Mesh(branchGeometry, bronzeMaterial)
+    branch.position.set(
+      Math.cos(angle) * 0.8,
+      0.2,
+      Math.sin(angle) * 0.8
+    )
+    branch.rotation.y = angle
+    branch.rotation.z = Math.PI / 6 * (index % 2 === 0 ? 1 : -1)
+    branch.castShadow = true
+    group.add(branch)
+    
+    // 分支灯盏托盘
+    const trayGeometry = new THREE.CylinderGeometry(0.35, 0.5, 0.12, 32)
+    const tray = new THREE.Mesh(trayGeometry, bronzeMaterial)
+    tray.position.set(
+      Math.cos(angle) * 1.5,
+      0.6,
+      Math.sin(angle) * 1.5
+    )
+    tray.castShadow = true
+    group.add(tray)
+    
+    // 分支灯盏边缘
+    const rimGeometry = new THREE.TorusGeometry(0.45, 0.06, 16, 32)
+    const rim = new THREE.Mesh(rimGeometry, goldMaterial)
+    rim.position.set(
+      Math.cos(angle) * 1.5,
+      0.7,
+      Math.sin(angle) * 1.5
+    )
+    rim.rotation.x = Math.PI / 2
+    rim.castShadow = true
+    group.add(rim)
+    
+    // 为每个分支灯盏添加火焰效果
+    createSingleFlame(group, Math.cos(angle) * 1.5, 0.85, Math.sin(angle) * 1.5, `flame_${index}`)
   })
-  const topDecoration = new THREE.Mesh(topDecorationGeometry, topDecorationMaterial)
-  topDecoration.position.y = 1.95
-  topDecoration.castShadow = true
-  group.add(topDecoration)
+  
+  // 为主灯盏添加火焰效果
+  createSingleFlame(group, 0, 1.2, 0, 'flame_main')
+  
+  // 验证居中
+  const box = new THREE.Box3().setFromObject(group)
+  const center = new THREE.Vector3()
+  box.getCenter(center)
+  console.log('五灯连枝灯模型中心:', center)
   
   return group
 }
 
+// 创建单个火焰效果
+const createSingleFlame = (group, x, y, z, namePrefix) => {
+  // 火焰核心（白色）
+  const flameCoreGeom = new THREE.SphereGeometry(0.05, 12, 12)
+  const flameCoreMat = new THREE.MeshBasicMaterial({ color: 0xFFFFFF, transparent: true, opacity: 0.95 })
+  const flameCore = new THREE.Mesh(flameCoreGeom, flameCoreMat)
+  flameCore.position.set(x, y, z)
+  flameCore.name = `${namePrefix}_core`
+  group.add(flameCore)
+  
+  // 火焰内层（黄色）
+  const flameInnerGeom = new THREE.ConeGeometry(0.04, 0.12, 10)
+  const flameInnerMat = new THREE.MeshBasicMaterial({ color: 0xFFFF99, transparent: true, opacity: 0.9 })
+  const flameInner = new THREE.Mesh(flameInnerGeom, flameInnerMat)
+  flameInner.position.set(x, y - 0.02, z)
+  flameInner.name = `${namePrefix}_inner`
+  group.add(flameInner)
+  
+  // 火焰中层（橙色）
+  const flameMidGeom = new THREE.ConeGeometry(0.06, 0.15, 10)
+  const flameMidMat = new THREE.MeshBasicMaterial({ color: 0xFFAA33, transparent: true, opacity: 0.75 })
+  const flameMid = new THREE.Mesh(flameMidGeom, flameMidMat)
+  flameMid.position.set(x, y - 0.05, z)
+  flameMid.name = `${namePrefix}_mid`
+  group.add(flameMid)
+  
+  // 火焰外层（红色）
+  const flameOuterGeom = new THREE.ConeGeometry(0.08, 0.18, 10)
+  const flameOuterMat = new THREE.MeshBasicMaterial({ color: 0xFF6633, transparent: true, opacity: 0.5 })
+  const flameOuter = new THREE.Mesh(flameOuterGeom, flameOuterMat)
+  flameOuter.position.set(x, y - 0.08, z)
+  flameOuter.name = `${namePrefix}_outer`
+  group.add(flameOuter)
+  
+  // 点光源
+  const flameLight = new THREE.PointLight(0xFFBB44, 2, 4, 2)
+  flameLight.position.set(x, y - 0.03, z)
+  flameLight.name = `${namePrefix}_light`
+  group.add(flameLight)
+  
+  // 光晕效果
+  const glowGeom = new THREE.SphereGeometry(0.3, 12, 12)
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: 0xFF8822,
+    transparent: true,
+    opacity: 0.1,
+    side: THREE.BackSide
+  })
+  const glow = new THREE.Mesh(glowGeom, glowMat)
+  glow.position.set(x, y - 0.05, z)
+  glow.name = `${namePrefix}_glow`
+  group.add(glow)
+}
+
+const createFallbackLamp = (group) => {
+  return createFiveBranchLamp()
+}
+
+// 添加发光光晕效果
+const addLampGlow = (group) => {
+  const glowGeometry = new THREE.SphereGeometry(0.4, 16, 16)
+  const glowMaterial = new THREE.MeshBasicMaterial({
+    color: 0xFF6600,
+    transparent: true,
+    opacity: 0.2
+  })
+  const glow = new THREE.Mesh(glowGeometry, glowMaterial)
+  glow.position.set(0, 0.5, 0)
+  group.add(glow)
+  
+  const glowGeometry2 = new THREE.SphereGeometry(0.6, 16, 16)
+  const glowMaterial2 = new THREE.MeshBasicMaterial({
+    color: 0xFF4400,
+    transparent: true,
+    opacity: 0.08
+  })
+  const glow2 = new THREE.Mesh(glowGeometry2, glowMaterial2)
+  glow2.position.set(0, 0.5, 0)
+  group.add(glow2)
+}
+
 const createLampLight = () => {
-  pointLight = new THREE.PointLight(0xFFFF99, 1.5, 8, 2)
-  pointLight.position.set(0, 1.2, 0)
+  pointLight = new THREE.PointLight(0xFF8833, 2.5, 10, 2)
+  pointLight.position.set(0, 0.5, 0)
   pointLight.castShadow = true
   pointLight.shadow.mapSize.width = 1024
   pointLight.shadow.mapSize.height = 1024
   scene.add(pointLight)
   
-  const lightSphereGeometry = new THREE.SphereGeometry(0.15, 32, 32)
+  const lightSphereGeometry = new THREE.SphereGeometry(0.25, 32, 32)
   const lightSphereMaterial = new THREE.MeshBasicMaterial({
-    color: 0xFFFF99,
+    color: 0xFF8833,
     transparent: true,
     opacity: 0.9
   })
   lightSphere = new THREE.Mesh(lightSphereGeometry, lightSphereMaterial)
-  lightSphere.position.set(0, 1.2, 0)
+  lightSphere.position.set(0, 0.5, 0)
   scene.add(lightSphere)
+}
+
+const animateFlame = () => {
+  if (!lampModel) return
+  
+  const time = Date.now() * 0.003
+  
+  lampModel.traverse((child) => {
+    // 支持多个火焰动画（主火焰和四个分支火焰）
+    if (child.name.includes('_core')) {
+      const offset = parseInt(child.name.split('_')[1]) || 0
+      child.scale.setScalar(1 + 0.15 * Math.sin(time * 2.5 + offset * 0.3))
+      child.material.opacity = 0.9 + 0.1 * Math.sin(time * 3 + offset * 0.2)
+    }
+    if (child.name.includes('_inner')) {
+      const offset = parseInt(child.name.split('_')[1]) || 0
+      child.scale.set(
+        1 + 0.1 * Math.sin(time * 2.3 + offset * 0.3), 
+        1 + 0.15 * Math.sin(time * 2 + 0.5 + offset * 0.3), 
+        1 + 0.1 * Math.sin(time * 2.3 + offset * 0.3)
+      )
+      child.material.opacity = 0.85 + 0.1 * Math.sin(time * 2.8 + offset * 0.2)
+    }
+    if (child.name.includes('_outer')) {
+      const offset = parseInt(child.name.split('_')[1]) || 0
+      child.scale.set(
+        1 + 0.1 * Math.sin(time * 2 + offset * 0.3), 
+        1 + 0.2 * Math.sin(time * 1.8 + 0.5 + offset * 0.3), 
+        1 + 0.1 * Math.sin(time * 2.5 + offset * 0.3)
+      )
+      child.rotation.z = 0.1 * Math.sin(time * 2 + offset * 0.3)
+    }
+    if (child.name.includes('_mid')) {
+      const offset = parseInt(child.name.split('_')[1]) || 0
+      child.scale.set(
+        1 + 0.12 * Math.sin(time * 2.2 + 1 + offset * 0.3), 
+        1 + 0.18 * Math.sin(time * 2 + 0.3 + offset * 0.3), 
+        1 + 0.12 * Math.sin(time * 2.2 + 1 + offset * 0.3)
+      )
+    }
+    if (child.name.includes('_light')) {
+      const offset = parseInt(child.name.split('_')[1]) || 0
+      child.intensity = 2 + 0.6 * Math.sin(time * 2.3 + offset * 0.4)
+    }
+    if (child.name.includes('_glow')) {
+      const offset = parseInt(child.name.split('_')[1]) || 0
+      child.scale.setScalar(1 + 0.2 * Math.sin(time * 1.8 + offset * 0.3))
+      child.material.opacity = 0.08 + 0.04 * Math.sin(time * 2.1 + offset * 0.2)
+    }
+  })
+  
+  requestAnimationFrame(animateFlame)
 }
 
 const createEnvironment = () => {
@@ -329,10 +651,13 @@ const animate = () => {
       lampModel.rotation.y += 0.003
     }
     
+    animateFlame()
+    
     if (pointLight && lightSphere && isLightingOn.value) {
-      const pulse = 1 + 0.15 * Math.sin(Date.now() * 0.002)
-      pointLight.intensity = 1.5 * pulse
-      lightSphere.material.opacity = 0.8 + 0.15 * Math.sin(Date.now() * 0.002)
+      const pulse = 1 + 0.3 * Math.sin(Date.now() * 0.003)
+      pointLight.intensity = 2.5 * pulse
+      lightSphere.material.opacity = 0.6 + 0.3 * Math.sin(Date.now() * 0.003)
+      lightSphere.scale.setScalar(1 + 0.15 * Math.sin(Date.now() * 0.003))
     }
     
     if (renderer && scene && camera) {
@@ -345,7 +670,7 @@ const animate = () => {
 
 const resetCamera = () => {
   if (camera && controls) {
-    camera.position.set(4, 2.5, 4)
+    camera.position.set(2.5, 2, 2.5)
     camera.lookAt(0, 0, 0)
     controls.reset()
   }
