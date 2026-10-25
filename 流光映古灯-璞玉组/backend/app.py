@@ -34,6 +34,8 @@ def allowed_file(filename):
 def geocode(address):
     # 高德地图API key
     api_key = os.environ.get("AMAP_API_KEY")
+    if not api_key:
+        return None, None
     url = f"https://restapi.amap.com/v3/geocode/geo?key={api_key}&address={address}&output=json"
     try:
         response = requests.get(url)
@@ -44,7 +46,7 @@ def geocode(address):
             return float(longitude), float(latitude)
         return None, None
     except Exception as e:
-        print(f"地理编码错误: {e}")
+        print("地理编码请求失败，请检查网络与地图服务配置")
         return None, None
 
 # API路由
@@ -977,6 +979,8 @@ def ai_chat():
         
         # 使用DeepSeek API
         api_key = os.environ.get("DEEPSEEK_API_KEY")
+        if not api_key:
+            return jsonify({'error': '请先配置 DEEPSEEK_API_KEY 环境变量'}), 503
         url = 'https://api.deepseek.com/v1/chat/completions'
         
         headers = {

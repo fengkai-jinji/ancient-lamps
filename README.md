@@ -58,7 +58,7 @@ pip install -r requirements.txt
 
 # 配置数据库连接（复制配置模板）
 cp backend/utils/config.example.py backend/utils/config.py
-# 编辑 config.py，填写您的数据库信息
+# 数据库密码及服务密钥通过环境变量提供，见下文
 
 # 初始化数据库
 # 运行数据库脚本完成表结构创建
@@ -66,6 +66,30 @@ cp backend/utils/config.example.py backend/utils/config.py
 # 启动服务
 python app.py
 ```
+
+### 本地凭据配置
+
+请先复制上面的配置模板，再在启动后端的同一个 PowerShell 窗口中设置环境变量：
+
+```powershell
+$env:DB_PASSWORD = '<填写本机数据库密码>'
+$env:AMAP_API_KEY = '<填写新建的高德 Web 服务密钥>'
+$env:DEEPSEEK_API_KEY = '<填写新建的 DeepSeek 密钥>'
+python app.py
+```
+
+- 数据库可选变量：`DB_HOST`（默认 localhost）、`DB_PORT`（默认 3306）、`DB_USER`（默认 root）、`DB_NAME`（默认 card）。
+- 缺少 `DB_PASSWORD` 时，示例配置会停止启动，避免意外使用硬编码密码。
+- 缺少 `AMAP_API_KEY` 时跳过地址地理编码；缺少 `DEEPSEEK_API_KEY` 时聊天接口返回配置提示。
+- `test_ai_api.py` 使用同一个 `DEEPSEEK_API_KEY`；数据库更新脚本使用相同的 `DB_*` 变量。
+- 程序直接读取进程环境变量，不会自动加载 `.env`。如使用本地 `.env` 或实际 `config.py`，请保持其被 Git 忽略。
+- 不要将真实密钥、密码、终端环境截图提交到仓库。历史中出现过的凭据应在对应平台撤销或更换。
+
+### 前端地图配置
+
+复制 `流光映古灯-璞玉组/puyu2.0/.env.example` 为同目录下的 `.env.local`，填写新申请的高德 JavaScript API Key 和安全码，再启动或重新构建前端。未配置时跳过地图加载。
+
+`VITE_*` 变量会进入浏览器构建产物，并非服务端秘密存储。请在高德控制台配置对应域名的访问限制，前后端分别使用对应服务类型的凭据；不要沿用历史中的旧值。`.env.local` 已被忽略，请勿提交。
 
 ### 前端部署
 

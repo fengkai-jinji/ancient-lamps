@@ -18,6 +18,8 @@ def ai_chat():
         
         # 使用DeepSeek API
         api_key = os.environ.get("DEEPSEEK_API_KEY")
+        if not api_key:
+            return jsonify({'error': '请先配置 DEEPSEEK_API_KEY 环境变量'}), 503
         url = 'https://api.deepseek.com/v1/chat/completions'
         
         headers = {

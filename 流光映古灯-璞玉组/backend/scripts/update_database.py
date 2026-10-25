@@ -3,10 +3,11 @@ import mysql.connector
 
 # 连接数据库
 cnx = mysql.connector.connect(
-    host="localhost",
-    user="root",
+    host=os.environ.get("DB_HOST", "localhost"),
+    user=os.environ.get("DB_USER", "root"),
     password=os.environ["DB_PASSWORD"],
-    database="card"
+    database=os.environ.get("DB_NAME", "card"),
+    port=int(os.environ.get("DB_PORT", "3306"))
 )
 
 cursor = cnx.cursor()

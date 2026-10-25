@@ -101,6 +101,10 @@
 	onMounted(async () => {
 		// 先获取地图灯具数据
 		await fetchMapData();
+		if (!import.meta.env.VITE_AMAP_KEY || !import.meta.env.VITE_AMAP_SECURITY_CODE) {
+			console.warn('请先配置 VITE_AMAP_KEY 和 VITE_AMAP_SECURITY_CODE');
+			return;
+		}
 		
 		window._AMapSecurityConfig = {
 			securityJsCode: import.meta.env.VITE_AMAP_SECURITY_CODE,
